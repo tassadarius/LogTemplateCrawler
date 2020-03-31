@@ -142,3 +142,6 @@ cython_debug/
 media
 static
 
+# Pycharm project directory
+.idea/
+

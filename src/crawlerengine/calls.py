@@ -1,17 +1,18 @@
 import json
 from typing import Union
 
-from .utils import send_and_receive, get_deepest_dict_value
+from .utils import Communicator, get_deepest_dict_value
 from .gittypes import GitTree, GitBlob
 
 
 class GitHubCrawlerCalls:
     api_endpoint = 'https://api.github.com/graphql'
 
-    def __init__(self, auth_token: str, owner: str, repository: str,):
-        self.auth_token = auth_token
+    def __init__(self, auth_token: str, owner: str, repository: str, use_session: bool = True):
         self.owner = owner
         self.repository = repository
+        self._auth_token = auth_token
+        self._communicator = Communicator(use_session)
 
     def get_primary_language(self) -> str:
         query_raw = f"""query {{
@@ -21,8 +22,8 @@ class GitHubCrawlerCalls:
                         }}"""
         query_skeleton = {'query': query_raw}
         query = json.dumps(query_skeleton)
-        header = {'Authorization': f'bearer {self.auth_token}'}
-        return get_deepest_dict_value(send_and_receive(header, query).json())
+        header = {'Authorization': f'bearer {self._auth_token}'}
+        return get_deepest_dict_value(self._communicator.send_and_receive(header, query).json())
 
     def get_default_branch(self) -> str:
         query_raw = f"""query {{
@@ -34,8 +35,8 @@ class GitHubCrawlerCalls:
                     }}"""
         query_skeleton = {'query': query_raw}
         query = json.dumps(query_skeleton)
-        header = {'Authorization': f'bearer {self.auth_token}'}
-        return get_deepest_dict_value(send_and_receive(header, query).json())
+        header = {'Authorization': f'bearer {self._auth_token}'}
+        return get_deepest_dict_value(self._communicator.send_and_receive(header, query).json())
 
     def get_root_tree(self) -> GitTree:
         query_raw = f"""query {{
@@ -58,8 +59,8 @@ class GitHubCrawlerCalls:
         }}"""
         query_skeleton = {'query': query_raw}
         query = json.dumps(query_skeleton)
-        header = {'Authorization': f'bearer {self.auth_token}'}
-        data = send_and_receive(header, query).json()
+        header = {'Authorization': f'bearer {self._auth_token}'}
+        data = self._communicator.send_and_receive(header, query).json()
         tree_content = data['data']['repository']['defaultBranchRef']['target']['tree']['entries']
         oid = data['data']['repository']['defaultBranchRef']['target']['oid']
         return self._fill_tree(oid, tree_content, name='__root__')
@@ -86,8 +87,8 @@ class GitHubCrawlerCalls:
         }}"""
         query_skeleton = {'query': query_raw}
         query = json.dumps(query_skeleton)
-        header = {'Authorization': f'bearer {self.auth_token}'}
-        data = send_and_receive(header, query).json()
+        header = {'Authorization': f'bearer {self._auth_token}'}
+        data = self._communicator.send_and_receive(header, query).json()
         tree_content = data['data']['repository']['object']['entries']
 
         if type(target_tree) == GitTree:
@@ -115,8 +116,8 @@ class GitHubCrawlerCalls:
             }}"""
         query_skeleton = {'query': query_raw}
         query = json.dumps(query_skeleton)
-        header = {'Authorization': f'bearer {self.auth_token}'}
-        _data = send_and_receive(header, query).json()
+        header = {'Authorization': f'bearer {self._auth_token}'}
+        _data = self._communicator.send_and_receive(header, query).json()
         data = _data['data']['repository']['object']
         if data['isBinary']:
             raise ValueError("Binary file fetched")

@@ -1,5 +1,7 @@
-from typing import List
+from typing import List, Union
 from random import sample
+from pathlib import Path
+from git import Repo
 
 from crawlerengine.calls import GitHubCrawlerCalls
 from crawlerengine.patterns import LanguageMap
@@ -41,6 +43,9 @@ class GitHubCrawler:
             return sample(files[:max_pool_samples], file_count)
         else:
             return files
+
+    def fetch_repository(self, destination: Union[str, Path]):
+        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', destination)
 
     def fetch_primary_language(self):
         self._language = self._caller.get_primary_language()

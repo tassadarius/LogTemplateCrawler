@@ -45,7 +45,7 @@ class GitHubCrawler:
             return files
 
     def fetch_repository(self, destination: Union[str, Path]):
-        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', destination)
+        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(destination))
 
     def fetch_primary_language(self):
         self._language = self._caller.get_primary_language()

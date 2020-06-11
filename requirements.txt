@@ -1,3 +1,5 @@
 requests
 GitPython
 keyring
+filelock
+pandas

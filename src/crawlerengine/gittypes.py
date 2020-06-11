@@ -34,3 +34,18 @@ class GitBlob(GitObject):
     def __eq__(self, other):
         return self.size == other.size
 
+
+@dataclass
+class GitRepo:
+    name: str
+    owner: str
+    url: str
+    stars: int
+    is_fork: bool
+    disk_usage: float
+    license: str
+    license_key: str
+    languages: List[str]
+    cursor: str
+
+

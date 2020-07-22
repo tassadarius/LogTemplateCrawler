@@ -3,9 +3,9 @@ import re
 from pathlib import Path
 from typing import Union, Tuple, List
 
-from logparser import filtersettings as fs
-from logparser.strstream import Stream
-from logparser.javatokenizer import JavaTokenizer
+from templatecrawler.logparser import filtersettings as fs
+from templatecrawler.logparser import Stream
+from templatecrawler.logparser import JavaTokenizer
 
 
 class JavaParser:

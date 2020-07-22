@@ -1,5 +1,5 @@
 import pandas as pd
-from tokentypes import TokenType
+from templatecrawler.tokentypes import TokenType
 from ast import literal_eval
 from typing import List
 import random

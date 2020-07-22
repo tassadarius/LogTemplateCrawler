@@ -6,10 +6,10 @@ from filelock import FileLock
 import pandas as pd
 from dataclasses import asdict
 
-from crawlerengine.calls import GitHubCrawlerCalls
-from crawlerengine.patterns import LanguageMap
-from crawlerengine.heuristicwalk import HeuristicDeepWalk
-from crawlerengine.gittypes import GitTree, GitBlob
+from templatecrawler.crawlerengine.calls import GitHubCrawlerCalls
+from templatecrawler.crawlerengine.patterns import LanguageMap
+from templatecrawler.crawlerengine.heuristicwalk import HeuristicDeepWalk
+from templatecrawler.crawlerengine.gittypes import GitTree, GitBlob
 
 
 class GitHubCrawler:

@@ -1,6 +1,7 @@
 from typing import List
 
-from logdetector import java, python, csharp
+from templatecrawler.logdetector import python, csharp
+from templatecrawler.logdetector import java
 
 
 class LogDetector:

@@ -5,6 +5,8 @@ from git import Repo
 from filelock import FileLock
 import pandas as pd
 from dataclasses import asdict
+import base64
+import psycopg2
 
 from templatecrawler.crawlerengine.calls import GitHubCrawlerCalls
 from templatecrawler.crawlerengine.patterns import LanguageMap
@@ -58,7 +60,7 @@ class GitHubCrawler:
         return self._caller.get_root_tree()
 
 
-class GitHubSearcher:
+class GitHubSearcherCSV:
     def __init__(self, csv_file: Union[str, Path], auth_token: str):
         if type(csv_file) == str:
             self._csv_path = Path(csv_file)
@@ -105,4 +107,18 @@ class GitHubSearcher:
         # (Optional) Licenses may be problematic
         pass
 
+
+class GitHubSearcher:
+    def __init__(self, auth_token: str):
+        self._caller = GitHubCrawlerCalls(auth_token=auth_token)
+        self._df = None
+
+    def repositories(self, language: str, count=100, cursor: int = None):
+        if cursor:
+            target = f'cursor:{cursor}'
+            cursor = base64.b64encode(target)
+
+        data = self._caller.search_for_repos(language, count, cursor)
+        self._df = pd.DataFrame([asdict(x) for x in data])
+        return self._df
 

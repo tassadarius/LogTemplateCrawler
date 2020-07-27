@@ -5,8 +5,8 @@ from .calls import GitHubCrawlerCalls
 from .gittypes import GitTree, GitBlob
 
 
-_priority_dirs = {'src', 'source'}
-_exclude_dirs = {'doc', 'docs', 'examples', 'test', 'tests', 'testing', 'tmp'}
+_priority_dirs = {'src', 'source', 'java', 'libs', 'core', 'app'}
+_exclude_dirs = {'doc', 'docs', 'examples', 'test', 'tests', 'testing', 'tmp', 'script', 'scripts'}
 
 
 class HeuristicDeepWalk:
@@ -18,7 +18,7 @@ class HeuristicDeepWalk:
         self._repo_name = repo_name
         self._split_depth = None
 
-    def retreive_file_list(self, splits=4, split_depth=2) -> List[GitBlob]:
+    def retreive_file_list(self, splits=4, split_depth=3) -> List[GitBlob]:
         self._split_depth = split_depth
         self._walk_first_layer(splits=splits)
 
@@ -63,7 +63,10 @@ class HeuristicDeepWalk:
         if priority_dirs:
             for _tree in priority_dirs:
                 self._deep_walk(_tree, splits)
+                splits = len(priority_dirs) - splits
         else:
+            splits = 0
+        if splits > 1:
             for _tree in self._select_random_trees(tree_directories, splits):
                 self._deep_walk(_tree, splits)
 
@@ -73,7 +76,8 @@ class HeuristicDeepWalk:
         elif 0 > len(trees) <= count:
             return trees
         else:
-            return [x for x in sample(trees, count)]
+            sample_size = min(len(trees), count)
+            return [x for x in sample(trees, sample_size)]
 
     def _select_files(self, tree: GitTree) -> List[GitBlob]:
         return [x for x in tree.entries if type(x) == GitBlob and x.name.endswith(self._file_endings)]

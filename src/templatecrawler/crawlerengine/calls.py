@@ -160,7 +160,7 @@ class GitHubCrawlerCalls:
             else:
                 license_name = ''
                 license_key = ''
-            name, owner = repo_data['nameWithOwner'].split('/')
+            owner, name = repo_data['nameWithOwner'].split('/')
             repositories.append(GitRepo(name=name, owner=owner, url=repo_data['url'], stars=star_data,
                                         is_fork=repo_data['isFork'], disk_usage=repo_data['diskUsage'],
                                         license=license_name, license_key=license_key,

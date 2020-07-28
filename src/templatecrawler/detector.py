@@ -20,7 +20,7 @@ class LogDetector:
 
     def from_files(self, files: List[str]):
         results = [self._engine.process_file(x) for x in files]
-        return results
+        return any(results)
 
     def from_dependencies(self, dependency_file: str):
         raise NotImplementedError

@@ -151,12 +151,18 @@ class DetectLoggingFromFilesOperator(BaseOperator):
         task_instance = context['task_instance']                # type: TaskInstance
         repositories = task_instance.xcom_pull(key='repositories')  # type: pd.DataFrame
         repositories.set_index('repo_id', inplace=True)
-        files = task_instance.xcom_pull(key='files')
+        files = task_instance.xcom_pull(key='repo_with_files')
 
-        for repo, files in files.items():
+        contains_logging = []
+        for repo, git_objects in files.items():
             detector = LogDetector(language='java')
-            contains_logging = detector.from_files(files)
-            log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {contains_logging}')
+            tmp_files = [git.content for git in git_objects]
+            tmp_bool = detector.from_files(tmp_files)
+            contains_logging.append(tmp_bool)
+            log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {tmp_bool}')
+        repositories = repositories.loc[files.keys()]
+        repositories['contains_logging'] = contains_logging
+        task_instance.xcom_push(key='logging_check_from_files', value=repositories)
 
 
 class DetectLoggingWithoutFilesOperator(BaseOperator):
@@ -166,13 +172,13 @@ class DetectLoggingWithoutFilesOperator(BaseOperator):
         super(DetectLoggingWithoutFilesOperator, self).__init__(*args, **kwargs)
 
     def execute(self, context):
-        breakpoint()
         task_instance = context['task_instance']                # type: TaskInstance
         repositories = task_instance.xcom_pull(key='repositories')  # type: pd.DataFrame
         repositories.set_index('repo_id', inplace=True)
-        files = task_instance.xcom_pull(key='files')
+        repo_ids = task_instance.xcom_pull(key='repo_without_files')
+        repositories = repositories.loc[repo_ids]
 
-        for repo, files in files.items():
-            detector = LogDetector(language='java')
-            contains_logging = detector.from_files(files)
-            log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {contains_logging}')
+        # Probably yes contains logging or probably no logging
+        mask = (repositories['stars'] > 200) & (repositories['disk_usage'] > 256000)
+        repositories['contains_logging'] = mask
+        task_instance.xcom_push(key='logging_check_without_files', value=repositories)

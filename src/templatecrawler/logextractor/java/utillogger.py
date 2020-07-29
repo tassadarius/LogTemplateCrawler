@@ -6,7 +6,7 @@ import pandas
 from ..extractorbase import ExtractorBase
 
 
-class utillogerExtractor(ExtractorBase):
+class utilloggerExtractor(ExtractorBase):
 
     log_statement_0 = re.compile(r'(fine|finer|finest|info|log|logp|logrb|warning|severe)\(')
     log_statement_1 = re.compile(r'\.log\(')

@@ -19,8 +19,8 @@ class LogDetector:
         self._engine = self._engine_selector[language]()
 
     def from_files(self, files: List[str]):
-        results = [self._engine.process_file(x) for x in files]
-        return any(results)
+        contains_logging, framework_indicators = [self._engine.process_file(x) for x in files]
+        return any(contains_logging), max(framework_indicators, key=framework_indicators.count)
 
     def from_dependencies(self, dependency_file: str):
         raise NotImplementedError

@@ -11,7 +11,7 @@ from airflow.hooks.postgres_hook import PostgresHook
 from airflow.models.taskinstance import TaskInstance
 from templatecrawler.crawler import GitHubSearcher, GitHubCrawler
 from templatecrawler.detector import LogDetector
-
+from templatecrawler.extractor import LogExtractor
 
 log = logging.getLogger(__name__)
 
@@ -182,3 +182,26 @@ class DetectLoggingWithoutFilesOperator(BaseOperator):
         mask = (repositories['stars'] > 200) & (repositories['disk_usage'] > 256000)
         repositories['contains_logging'] = mask
         task_instance.xcom_push(key='logging_check_without_files', value=repositories)
+
+
+class CloneAndExtractOperator(BaseOperator):
+
+    @apply_defaults
+    def __init__(self, *args, **kwargs):
+        super(CloneAndExtractOperator, self).__init__(*args, **kwargs)
+
+    def execute(self, context):
+        task_instance = context['task_instance']  # type: TaskInstance
+        repositories = task_instance.xcom_pull(key='target_repositories')  # type: pd.DataFrame
+        repositories.set_index('repo_id', inplace=True)
+
+        extracted = {}
+        for idx, repo in repositories.iterrows():
+            crawler = GitHubCrawler(auth_token=None, owner=repo.owner, repository=repo.name)
+            crawler.fetch_repository('.')
+            if len(repo.framework) > 0:
+                extractor = LogExtractor(language='java', framework=repo.framework, repository='.')
+                raw_events = extractor.extract()
+                extracted[idx] = raw_events
+        task_instance.xcom_push(key='raw_events', value=extracted)
+

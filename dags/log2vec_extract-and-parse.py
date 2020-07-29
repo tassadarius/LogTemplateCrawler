@@ -19,12 +19,14 @@ def _load_from_database(**context):
     params = context['params']
     postgres_conn_id = params['postgres_conn_id']
     pg_hook = PostgresHook(postgres_conn_id=postgres_conn_id)
+    cur = pg_hook.get_cursor()
     table_name = 'repositories'
-    constraint_column = 'processed'
-    query = f"""SELECT * from {table_name} WHERE {constraint_column} = %s LIMIT 20"""
-    repos = pg_hook.get_pandas_df(query, parameters=[False])
+    constraint_col0 = 'processed'
+    constraint_col1 = 'contains_logging'
+    query = cur.mogrify(f"""SELECT * from {table_name} WHERE {constraint_col0} = %s AND {constraint_col1} = %s  LIMIT 20""")
+    repos = pg_hook.get_pandas_df(query, parameters=[False, True])
     task_instance = context['task_instance']
-    task_instance.xcom_push('repositories', repos)
+    task_instance.xcom_push('target_repositories', repos)
     return True
 
 

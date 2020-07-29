@@ -46,9 +46,11 @@ CREATE TABLE public.discarded_repositories (
     processed boolean,
     is_fork boolean,
     stars integer,
-    cursor character(16),
+    cursor integer,
     disk_usage integer,
-    license text
+    license text,
+    languages text[],
+    owner character varying(96)
 );
 
 
@@ -66,9 +68,11 @@ CREATE TABLE public.repositories (
     processed boolean DEFAULT false,
     is_fork boolean DEFAULT false,
     stars integer,
-    cursor character(16),
+    cursor integer,
     disk_usage integer,
-    license text
+    license text,
+    languages text[],
+    owner character varying(96)
 );
 
 
@@ -104,7 +108,10 @@ CREATE TABLE public.templates (
     template_id integer NOT NULL,
     repository integer NOT NULL,
     template text NOT NULL,
-    crawl_date timestamp with time zone
+    crawl_date timestamp with time zone,
+    framework character varying(16),
+    raw text,
+    parsed text
 );
 
 

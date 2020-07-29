@@ -6,9 +6,9 @@ import pandas
 from ..extractorbase import ExtractorBase
 
 
-class slf4jExtractor(ExtractorBase):
+class utillogerExtractor(ExtractorBase):
 
-    log_statement_0 = re.compile(r'(fatal|info|error|debug|trace|warn)\(')
+    log_statement_0 = re.compile(r'(fine|finer|finest|info|log|logp|logrb|warning|severe)\(')
     log_statement_1 = re.compile(r'\.log\(')
 
     bracket = re.compile(r'\(|\)')

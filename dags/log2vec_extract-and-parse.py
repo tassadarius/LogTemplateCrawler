@@ -5,7 +5,7 @@ from airflow.operators.python_operator import PythonOperator
 from airflow.hooks.postgres_hook import PostgresHook
 from psycopg2.extras import execute_values
 
-from templatecrawler.airflow.plugins.operators import  \
+from templatecrawler.airflow.plugins.operators import \
     FetchFilesOperator, DetectLoggingWithoutFilesOperator, DetectLoggingFromFilesOperator
 
 default_args = {
@@ -13,6 +13,7 @@ default_args = {
 }
 
 log = logging.getLogger(__name__)
+
 
 def _load_from_database(**context):
     params = context['params']
@@ -65,10 +66,10 @@ dag = DAG('log2vec_detect-logging',
 
 load_task = PythonOperator(task_id='load_from_database_task', dag=dag, python_callable=_load_from_database,
                            provide_context=True, params=default_args)
-fetch_files_task = FetchFilesOperator(task_id='fetch_files_task')
-detect_from_files_task = DetectLoggingFromFilesOperator(task_id='detect_from_files_task', dag=dag)
-detect_without_files_task = DetectLoggingWithoutFilesOperator(task_id='detect_without_files_task', dag=dag)
+"""INSERT HERE"""
+
+
+"""INSERT END HERE"""
 update_task = PythonOperator(task_id='update_database_task', dag=dag, python_callable=_update_database,
                              provide_context=True, params=default_args)
 
-load_task >> fetch_files_task >> [detect_from_files_task, detect_without_files_task] >> update_task

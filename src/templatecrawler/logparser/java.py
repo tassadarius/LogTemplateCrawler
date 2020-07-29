@@ -4,23 +4,23 @@ from pathlib import Path
 from typing import Union, Tuple, List
 
 from templatecrawler.logparser import filtersettings as fs
-from templatecrawler.logparser import Stream
-from templatecrawler.logparser import JavaTokenizer
+from templatecrawler.logparser.strstream import Stream
+from templatecrawler.logparser.javatokenizer import JavaTokenizer
 
 
 class JavaParser:
 
-    def __init__(self, path_to_csv: Union[str, Path] = None, data: pd.DataFrame = None):
-        if path_to_csv is None and data is None:
-            raise ValueError("At least a path_to_csv or directly a DataFrame must be given")
-        if path_to_csv:
-            self.df = pd.read_csv(path_to_csv)
-        if data is not None:
-            self.df = data
-        self.df = self.df[self.df['print'].notna()]
+    #def __init__(self, path_to_csv: Union[str, Path] = None, data: pd.DataFrame = None):
+    #    if path_to_csv is None and data is None:
+    #        raise ValueError("At least a path_to_csv or directly a DataFrame must be given")
+    #    if path_to_csv:
+    #        self.df = pd.read_csv(path_to_csv)
+    #    if data is not None:
+    #        self.df = data
+    #    self.df = self.df[self.df['print'].notna()]
 
-    def extract_and_convert(self, column='print'):
-        data = self.df[column]
+    def extract_and_convert(self, data, column='print'):
+        #data = self.df[column]
 
         print(f'Dataset size before filtering is {len(data)}')
 
@@ -28,7 +28,7 @@ class JavaParser:
         for current_filter in fs.filter_rules:
             mask = data.apply(lambda x: True if re.search(current_filter, x) else False)  # True if filter matches
             data = data[~mask]                                                            # Remove all Trues
-            self.df = self.df[~mask]                                                      # Also in parent structure
+            # self.df = self.df[~mask]                                                      # Also in parent structure
             print(f'Removed {sum(mask)} entries from dataset. New size is {len(data)}')
 
         output = {'template': [], 'arguments': []}

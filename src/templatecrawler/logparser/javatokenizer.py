@@ -1,7 +1,7 @@
 import re
 from typing import Callable
 
-from templatecrawler.logparser import Stream
+from templatecrawler.logparser.strstream import Stream
 
 
 class JavaTokenizer:

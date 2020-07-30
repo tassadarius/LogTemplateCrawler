@@ -10,6 +10,7 @@ class ExtractorBase(ABC):
         self._df = None
         self._log_statements = None
         self._log_statement_files = None
+        self._stream = None
 
     @abstractmethod
     def extract_events(self):

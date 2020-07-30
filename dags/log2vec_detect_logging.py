@@ -31,13 +31,16 @@ def _update_database(**context):
     task_instance = context['task_instance']
     from_files = task_instance.xcom_pull(key='logging_check_from_files')
     without_files = task_instance.xcom_pull(key='logging_check_without_files')
+    records_framework = None
     if from_files is not None and without_files is not None:
-        records = list(from_files['contains_logging'].items())
-        records += list(without_files['contains_logging'].items())
+        records_contains = list(from_files['contains_logging'].items())
+        records_contains += list(without_files['contains_logging'].items())
+        records_framework = list(without_files['indicators'].items())
     elif from_files is not None:
-        records = list(from_files['contains_logging'].items())
+        records_contains = list(from_files['contains_logging'].items())
+        records_framework = list(without_files['indicators'].items())
     elif without_files is not None:
-        records = list(without_files['contains_logging'].items())
+        records_contains = list(without_files['contains_logging'].items())
     else:
         log.warning("Did not receive any data to update")
         return
@@ -52,9 +55,18 @@ def _update_database(**context):
     cur = conn.cursor()
     query = cur.mogrify(f"""UPDATE {table_name} SET {target_col} = data.{target_col} FROM
 (VALUES %s) AS data({constraint_col}, {target_col}) WHERE {table_name}.{constraint_col} = data.{constraint_col}""")
-    execute_values(cur=cur, sql=query, argslist=records)
+    execute_values(cur=cur, sql=query, argslist=records_contains)
+    conn.commit()
+    if not records_framework:
+        cur.close()
+        return True
+    target_col = 'framework'
+    query = cur.mogrify(f"""UPDATE {table_name} SET {target_col} = data.{target_col} FROM
+    (VALUES %s) AS data({constraint_col}, {target_col}) WHERE {table_name}.{constraint_col} = data.{constraint_col}""")
+    execute_values(cur=cur, sql=query, argslist=records_framework)
     conn.commit()
     cur.close()
+    return True
 
 
 dag = DAG('log2vec_detect-logging',

@@ -154,14 +154,20 @@ class DetectLoggingFromFilesOperator(BaseOperator):
         files = task_instance.xcom_pull(key='repo_with_files')
 
         contains_logging = []
+        indicators = []
         for repo, git_objects in files.items():
             detector = LogDetector(language='java')
             tmp_files = [git.content for git in git_objects]
-            tmp_bool = detector.from_files(tmp_files)
-            contains_logging.append(tmp_bool)
-            log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {tmp_bool}')
+            tmp_bool, indicator = detector.from_files(tmp_files)
+            if not indicator:
+                contains_logging.append(tmp_bool)
+                indicators.append(indicator)
+                log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {tmp_bool}')
+            elif tmp_bool and not indicator:
+                log.warning(f'Could find logging but no indicator for {repositories.loc[repo].owner}/{repositories.loc[repo].name:}')
         repositories = repositories.loc[files.keys()]
         repositories['contains_logging'] = contains_logging
+        repositories['contains_logging'] = indicators
         task_instance.xcom_push(key='logging_check_from_files', value=repositories)
 
 

@@ -5,6 +5,7 @@ import pandas
 import logging
 
 from ..extractorbase import ExtractorBase
+from templatecrawler.logparser.strstream import Stream
 
 
 class slf4jExtractor(ExtractorBase):
@@ -12,14 +13,14 @@ class slf4jExtractor(ExtractorBase):
     log_statement_0 = re.compile(r'\.(fatal|info|error|debug|trace|warn)\(')
     log_statement_1 = re.compile(r'\.log\(')
 
-    bracket = re.compile(r'\(|\)')
-
     def extract_events(self) -> pandas.DataFrame:
         self._log_statements = []
         self._log_statement_files = []
         last_dir = self._path.name
 
         for _file in self._path.rglob('*.java'):
+            if not _file.is_file():
+                continue
             with open(_file, 'r') as fd:
                 strip_parents = _file.parts[_file.parts.index(last_dir) + 1:]
                 filename = '/'.join(strip_parents)
@@ -28,12 +29,13 @@ class slf4jExtractor(ExtractorBase):
                     search_result = [m.end() for m in re.finditer(self.log_statement_0, data)]
                     for index_end in search_result:
                         line_begin = self._find_log_beginning(data, index_end, _file)
-                        self._log_statements.append(self._parse_log_statement(data[line_begin:]))
+                        line_end = self._end_of_line(data, line_begin)
+                        self._log_statements.append(data[line_begin:line_end])
                         self._log_statement_files.append(filename)
                 except UnicodeDecodeError as e:
-                    self.logger.info(f'A problem occured while parsing {_file}:{line_begin} {e.__class__.__name__}' )
+                    self.logger.info(f'A problem occured while parsing {_file}:{line_begin} {e.__class__.__name__}')
                 except ValueError as e:
-                    self.logger.info(f'A problem occured while parsing {_file}:{line_begin} {e.__class__.__name__}' )
+                    self.logger.info(f'A problem occured while parsing {_file}:{line_begin} {e.__class__.__name__}')
         return self._build_events()
 
     def get_event_count(self):
@@ -78,20 +80,23 @@ class slf4jExtractor(ExtractorBase):
                                'name': [repo_name] * entries, 'url': [repo_url] * entries})
         df.to_csv(path)
 
-    def _parse_log_statement(self, parameters: str):
-        index = 0
-        stack = []
+    def _end_of_line(self, data: str, offset: int):
+        if not self._stream:
+            self._stream = Stream(data)
+        self._stream.pos = offset
 
-        while index < len(parameters):
-            match = re.search(self.bracket, parameters[index:])
-            if not match:
-                raise ValueError("Unexpected EOF")
-            if parameters[index + match.start()] == '(':
-                stack.append('(')
-            elif parameters[index + match.start()] == ')':
-                stack.pop()
+        while not self._stream.eof():
+            if self._stream.peek() == '"':
+                self._read_string()
+            elif self._stream.peek() == ';':
+                return self._stream.pos
+            self._stream.next()
 
-            index += match.end()
-            if not stack:
-                return parameters[:index]
+    def _read_string(self):
+        escaped = False
+        while not self._stream.eof():
+            if self._stream.peek() == r'\\':
+                escaped = True
+            if self._stream.peek() == '"' and not escaped:
+                return self._stream.pos
         raise ValueError("Unexpected EOF")

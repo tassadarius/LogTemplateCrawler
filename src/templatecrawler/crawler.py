@@ -6,6 +6,7 @@ from filelock import FileLock
 import pandas as pd
 from dataclasses import asdict
 import base64
+import shutil
 import psycopg2
 
 from templatecrawler.crawlerengine.calls import GitHubCrawlerCalls
@@ -49,8 +50,17 @@ class GitHubCrawler:
         else:
             return files
 
+    @staticmethod
+    def _update(op_code, cur_count, max_count=None, message=''):
+        if max_count:
+            print(f'Downloading repository: {cur_count}/{max_count}\r', end="")
+
     def fetch_repository(self, destination: Union[str, Path]):
-        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(destination))
+        _destination = Path(destination, self.repository)
+        if _destination.exists():
+            return
+            # shutil.rmtree(_destination)
+        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(_destination), progress=GitHubCrawler._update)
 
     def fetch_primary_language(self):
         self._language = self._caller.get_primary_language()

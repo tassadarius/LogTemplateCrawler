@@ -1,7 +1,6 @@
 import pandas as pd
 import re
-from pathlib import Path
-from typing import Union, Tuple, List
+from typing import Tuple, List
 
 from templatecrawler.logparser import filtersettings as fs
 from templatecrawler.logparser.strstream import Stream
@@ -10,18 +9,38 @@ from templatecrawler.logparser.javatokenizer import JavaTokenizer
 
 class JavaParser:
 
-    #def __init__(self, path_to_csv: Union[str, Path] = None, data: pd.DataFrame = None):
-    #    if path_to_csv is None and data is None:
-    #        raise ValueError("At least a path_to_csv or directly a DataFrame must be given")
-    #    if path_to_csv:
-    #        self.df = pd.read_csv(path_to_csv)
-    #    if data is not None:
-    #        self.df = data
-    #    self.df = self.df[self.df['print'].notna()]
 
-    def extract_and_convert(self, data, column='print'):
-        #data = self.df[column]
+    _general_map = {
+        'format': 'format',
+        'printf': 'printf'
+    }
+    _slf4j_map = {
+        'trace': 'format',
+        'debug': 'format',
+        'info': 'format',
+        'warn': 'format',
+        'error': 'format'
+    }
+    _log4j_map = _slf4j_map
 
+    _utillogger_map = {
+        'fine': 'simple',
+        'finer': 'simple',
+        'finest': 'simple',
+        'severe': 'simple',
+        'warning': 'simple',
+    }
+
+    _framework_selector = {
+        'slf4j': _slf4j_map,
+        'log4j': _log4j_map,
+        'utillogger': _utillogger_map
+    }
+
+    def __init__(self, framework: str):
+        self.framework_map = self._framework_selector[framework]
+
+    def run(self, data):
         print(f'Dataset size before filtering is {len(data)}')
 
         # Filter useless rows
@@ -34,15 +53,15 @@ class JavaParser:
         output = {'template': [], 'arguments': []}
         for string in data:
             try:
-                result, arguments = self._parse(string)
+                result, arguments = self._parse_new(string)
                 output['template'].append(result)
                 output['arguments'].append(arguments)
             except ValueError as e:
                 print(f'{string}\nParsing error: ', e)
         return pd.DataFrame(output)
 
-    def _parse(self, input) -> Tuple[str, List[str]]:
-        character_stream = Stream(input)
+    def _parse(self, inp) -> Tuple[str, List[str]]:
+        character_stream = Stream(inp)
         lexer = JavaTokenizer(character_stream)
 
         log_string = ""
@@ -129,6 +148,9 @@ class JavaParser:
                     log_string += '{}'
                 else:
                     arguments.append(hints[0])
+            else:
+                print(f'Weird behavio for token {current_token}<{current_type}>')
+                lexer.next()
         return log_string, arguments
         # print(f'Original line: {input}\n'
         #       f'Parsed Log-String: {log_string}\n'
@@ -216,3 +238,172 @@ class JavaParser:
             return 'float', value
         except ValueError:
             pass
+
+    def _parse_new(self, inp: str):
+        character_stream = Stream(inp)
+        lexer = JavaTokenizer(character_stream)
+
+#         initial_expression = self._get_format_expression(lexer)
+#         mapping = ''
+#         try:
+#             mapping = self._map_function(initial_expression[-1])
+#             print(f"{''.join(initial_expression)} detected as {mapping}")
+#         except ValueError as e:
+#             print(f"{''.join(initial_expression)} could not be mapped {str(e)}")
+#             return 'a', 'b'
+#
+#        message, variables = self.processing_map[mapping](lexer)
+        mode, message, variables = self._read_variable(lexer)
+        if mode == 'simple':
+            return '', []
+        elif mode == 'nested':
+            return message, variables
+        else:
+            print('Don\'t know what to do')
+
+    def _parse_format(self, lexer: JavaTokenizer):
+        params = ['str', '...']
+        param_offset = 0
+        param_type = params[param_offset]
+        message = ''
+        variables = []
+        statement_stack = []
+        while not lexer.eof():
+            token_type, token = lexer.peek()
+
+            # Advance argument
+            if token_type == 'punc' and token == ',':
+                param_offset += 1
+                param_type = params[param_offset]
+
+            # New expression
+            elif token_type == 'punc' and token == '(':
+                statement_stack.append(token)
+            # Closing expression
+            elif token_type == 'punc' and token == ')':
+                statement_stack.pop()
+                # No expressions left
+                if not statement_stack:
+                    break
+
+            # String literal
+            elif token_type == 'str' and param_type == '...':
+                variables.append(token)
+            elif token_type == 'str':
+                message += token
+
+            elif token_type == 'num' and param_type == 'str':
+                message += str(token)
+
+            # Variable
+            elif token_type == 'var' or (token_type == 'op' and lexer.is_unary_ops(token)):
+
+                # If it is not, handle as normal variable
+                var_type, tokens, arguments = self._read_variable(lexer)
+                if var_type == 'simple':
+                    variables.append(''.join(tokens))
+                    if param_type == 'str':
+                        message += '{}'
+                if var_type == 'nested':
+                    message += tokens
+                    variables.append(arguments)
+
+            # Operator '+' on string
+            elif param_type == 'str' and token_type == 'op' and token == '+':
+                lexer.next()
+                token_type, token = lexer.peek()
+                if token_type == 'str':
+                    message += token
+
+            lexer.next()
+        return message, variables
+
+            # Operator
+
+
+
+    def _parse_simple(self, lexer: JavaTokenizer):
+        return '', []
+
+    def _parse_printf(self, lexer: JavaTokenizer):
+        return '', []
+
+    def _get_format_expression(self, lexer: JavaTokenizer):
+        token_type, token = lexer.peek()
+        if token_type != 'var':
+            print(f'Unexpected BOF token: {token_type}  ({token})')
+
+        stack = []
+        while not lexer.eof():
+            token_type, token = lexer.peek()
+            if token_type == 'punc' and token == '(':
+                return stack
+            stack.append(token)
+            lexer.next()
+
+    def _map_function(self, function_name):
+        """ There are 3 major styles of functions:
+            * printf
+            * format
+            * simple
+
+        :return:
+        """
+        if function_name in self.framework_map.keys():
+            return self.framework_map[function_name]
+        elif function_name in self._general_map.keys():
+            return self._general_map[function_name]
+        else:
+            return None
+
+    _processing_map = {
+        'format': _parse_format,
+        'simple': _parse_simple,
+        'printf': _parse_printf
+    }
+
+    def _read_variable(self, lexer):
+        stack = []
+        variable_name = []
+        previous_was_var = False
+        while not lexer.eof():
+            token_type, token = lexer.peek()
+            if token_type == 'punc' and token == ',' and not stack:
+                return 'simple', variable_name, None
+            elif token_type == 'op' and token == '+' and not stack:
+                return 'simple', variable_name, None
+            elif token_type == 'var':
+                previous_was_var = True
+
+            # Function Call
+            elif token_type == 'punc' and token == '(' and previous_was_var:
+                previous_was_var = False
+                mapping = self._map_function(variable_name[-1])
+
+                # If it is another formatting call, follow it
+                if mapping in self._processing_map.keys():
+                    func = self._processing_map[mapping]
+                    msg, variables = func(self, lexer)
+                    return 'nested', msg, variables
+                # Elsewise we handle as normal expression bracket
+                else:
+                    stack.append('(')
+
+            # Bracket expression
+            elif token_type == 'punc' and token == '(':
+                previous_was_var = False
+                stack.append('(')
+            elif token_type == 'punc' and token == ')':
+                previous_was_var = False
+                # If there's a closing bracket without an opening one it is not ours again and we release
+                if not stack:
+                    return 'simple', variable_name, None
+                # In this case it is our bracket and we pop it
+                else:
+                    stack.pop()
+            else:
+                previous_was_var = False
+            variable_name.append(token)
+            lexer.next()
+        raise ValueError('Unexpected EOF')
+

@@ -11,7 +11,7 @@ class JavaTokenizer:
     _punc_re = re.compile(r'[;,.(){}[\]]')
     _identifier_start_re = re.compile(r'[_$A-Za-z]')
     _identifier_re = re.compile(r'[^.+*|^/%=\&\-<>!;,(){}[\]]')  # Match all those which are not punctuation or ops
-    _unary_ops_re = re.compile(r'^(\+|\+\+|-|--|!)$')
+    _unary_ops_re = re.compile(r'^(\+\+|-|--|!)$')
     _digit_re = re.compile(r'\d')
 
     def __init__(self, input: Stream):

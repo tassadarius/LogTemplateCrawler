@@ -1,6 +1,7 @@
 import pandas as pd
 import re
 from typing import Tuple, List
+import logging
 
 from templatecrawler.logparser import filtersettings as fs
 from templatecrawler.logparser.strstream import Stream
@@ -9,7 +10,7 @@ from templatecrawler.logparser.javatokenizer import JavaTokenizer
 
 class JavaParser:
 
-
+    log = logging.getLogger(__name__)
     _general_map = {
         'format': 'format',
         'printf': 'printf'
@@ -56,6 +57,7 @@ class JavaParser:
                 result, arguments = self._parse_new(string)
                 output['template'].append(result)
                 output['arguments'].append(arguments)
+                output['raw'].append(string)
             except ValueError as e:
                 print(f'{string}\nParsing error: ', e)
         return pd.DataFrame(output)
@@ -87,7 +89,6 @@ class JavaParser:
                     log_string += current_token
                     lexer.next()
                 elif current_type == 'op' and not lexer.is_unary_ops(current_token):
-                    # print(f'{input} could not be parsed')
                     raise ValueError(f'Operator {current_token} may not follow a +')
                 elif current_type == 'op':
                     lexer.next()
@@ -152,9 +153,6 @@ class JavaParser:
                 print(f'Weird behavio for token {current_token}<{current_type}>')
                 lexer.next()
         return log_string, arguments
-        # print(f'Original line: {input}\n'
-        #       f'Parsed Log-String: {log_string}\n'
-        #       f'Parsed Arguments: {arguments}')
 
     def _read_var(self, lexer: JavaTokenizer):
         initial_type, var_tokens = lexer.peek()
@@ -243,23 +241,13 @@ class JavaParser:
         character_stream = Stream(inp)
         lexer = JavaTokenizer(character_stream)
 
-#         initial_expression = self._get_format_expression(lexer)
-#         mapping = ''
-#         try:
-#             mapping = self._map_function(initial_expression[-1])
-#             print(f"{''.join(initial_expression)} detected as {mapping}")
-#         except ValueError as e:
-#             print(f"{''.join(initial_expression)} could not be mapped {str(e)}")
-#             return 'a', 'b'
-#
-#        message, variables = self.processing_map[mapping](lexer)
         mode, message, variables = self._read_variable(lexer)
         if mode == 'simple':
             return '', []
         elif mode == 'nested':
             return message, variables
         else:
-            print('Don\'t know what to do')
+            self.log.warning(f'General Parsing problem [Error on evaluating first expression] on <{inp}>')
 
     def _parse_format(self, lexer: JavaTokenizer):
         params = ['str', '...']
@@ -318,10 +306,6 @@ class JavaParser:
             lexer.next()
         return message, variables
 
-            # Operator
-
-
-
     def _parse_simple(self, lexer: JavaTokenizer):
         return '', []
 
@@ -331,7 +315,7 @@ class JavaParser:
     def _get_format_expression(self, lexer: JavaTokenizer):
         token_type, token = lexer.peek()
         if token_type != 'var':
-            print(f'Unexpected BOF token: {token_type}  ({token})')
+            self.log.info(f'Unexpected BOF token: {token_type}  ({token})')
 
         stack = []
         while not lexer.eof():
@@ -406,4 +390,3 @@ class JavaParser:
             variable_name.append(token)
             lexer.next()
         raise ValueError('Unexpected EOF')
-

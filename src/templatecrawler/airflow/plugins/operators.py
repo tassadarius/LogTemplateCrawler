@@ -12,6 +12,11 @@ from airflow.models.taskinstance import TaskInstance
 from templatecrawler.crawler import GitHubSearcher, GitHubCrawler
 from templatecrawler.detector import LogDetector
 from templatecrawler.extractor import LogExtractor
+from templatecrawler.parser import LogParser
+from templatecrawler.templatefilter import find_valid
+
+import templatecrawler.formalizer as formalizer
+import templatecrawler.tokentypes as ttokens
 
 log = logging.getLogger(__name__)
 
@@ -72,8 +77,8 @@ class SearchRepoOperator(BaseOperator):
 
         # get_first() returns NoneType if the database is empty. 'or 0' is a precaution so max does not fail.
         # If both are 0 we return NoneType indicating the database is empty
-        repo = pg_hook.get_first(f'SELECT cursor FROM {table_0} ORDER BY cursor DESC LIMIT 1', True) or 0
-        disc_repo = pg_hook.get_first(f'SELECT cursor FROM {table_1} ORDER BY cursor DESC LIMIT 1', True) or 0
+        repo, = pg_hook.get_first(f'SELECT cursor FROM {table_0} ORDER BY cursor DESC LIMIT 1', True) or (0,)
+        disc_repo, = pg_hook.get_first(f'SELECT cursor FROM {table_1} ORDER BY cursor DESC LIMIT 1', True) or (0,)
         max_value = max(repo, disc_repo)
         return None if max_value == 0 else max_value
 
@@ -158,16 +163,16 @@ class DetectLoggingFromFilesOperator(BaseOperator):
         for repo, git_objects in files.items():
             detector = LogDetector(language='java')
             tmp_files = [git.content for git in git_objects]
-            tmp_bool, indicator = detector.from_files(tmp_files)
-            if not indicator:
+            tmp_bool, tmp_indicator = detector.from_files(tmp_files)
+            if tmp_bool and tmp_indicator:
                 contains_logging.append(tmp_bool)
-                indicators.append(indicator)
+                indicators.append(tmp_indicator)
                 log.info(f'{repositories.loc[repo].owner}/{repositories.loc[repo].name:<25} logging: {tmp_bool}')
-            elif tmp_bool and not indicator:
+            elif tmp_bool and not tmp_indicator:
                 log.warning(f'Could find logging but no indicator for {repositories.loc[repo].owner}/{repositories.loc[repo].name:}')
         repositories = repositories.loc[files.keys()]
         repositories['contains_logging'] = contains_logging
-        repositories['contains_logging'] = indicators
+        repositories['framework'] = indicators
         task_instance.xcom_push(key='logging_check_from_files', value=repositories)
 
 
@@ -203,11 +208,65 @@ class CloneAndExtractOperator(BaseOperator):
 
         extracted = {}
         for idx, repo in repositories.iterrows():
-            crawler = GitHubCrawler(auth_token=None, owner=repo.owner, repository=repo.name)
+            crawler = GitHubCrawler(auth_token=None, owner=repo['owner'], repository=repo['name'])
             crawler.fetch_repository('.')
             if len(repo.framework) > 0:
-                extractor = LogExtractor(language='java', framework=repo.framework, repository='.')
+                extractor = LogExtractor(language='java', framework=repo.framework, repository=repo['name'])
                 raw_events = extractor.extract()
                 extracted[idx] = raw_events
         task_instance.xcom_push(key='raw_events', value=extracted)
+        task_instance.xcom_push(key='target_repositories', value=repositories)
 
+
+class ParseOperator(BaseOperator):
+
+    @apply_defaults
+    def __init__(self, *args, **kwargs):
+        super(ParseOperator, self).__init__(*args, **kwargs)
+
+    def execute(self, context):
+        task_instance = context['task_instance']  # type: TaskInstance
+        repositories = task_instance.xcom_pull(key='target_repositories')  # type: pd.DataFrame
+        data = task_instance.xcom_pull(key='raw_events')
+        parsed = None
+        for repo_id, extracted_lines in data.items():
+            parser = LogParser(language='java')
+            result = parser.run(extracted_lines['raw'], framework=repositories.loc[repo_id]['framework'])
+            result['repo_id'] = repo_id
+            if len(result) == 0:
+                continue
+            if parsed is None:
+                parsed = result
+            else:
+                parsed = parsed.merge(result, how='outer')
+            log.info(f"Parsed {len(result)} events from {repositories.loc[repo_id]['owner']}/{repositories.loc[repo_id]['owner']}")
+        task_instance.xcom_push(key='parsed', value=parsed)
+
+
+class FilterTemplatesOperator(BaseOperator):
+
+    @apply_defaults
+    def __init__(self, *args, **kwargs):
+        super(FilterTemplatesOperator, self).__init__(*args, **kwargs)
+
+    def execute(self, context):
+        task_instance = context['task_instance']  # type: TaskInstance
+        data = task_instance.xcom_pull(key='parsed')  # type: pd.DataFrame
+        validity_mask = find_valid(data['template'])
+        data = data.loc[validity_mask]
+        task_instance.xcom_push(key='parsed', value=data)
+
+
+class FormalizeOperator(BaseOperator):
+
+    @apply_defaults
+    def __init__(self, *args, **kwargs):
+        super(FormalizeOperator, self).__init__(*args, **kwargs)
+
+    def execute(self, context):
+        task_instance = context['task_instance']  # type: TaskInstance
+        data = task_instance.xcom_pull(key='parsed')  # type: pd.DataFrame
+        output = formalizer.formalize(data, possible_types=ttokens.tokens)
+        data = data.loc[output.keys()]
+        data['template'] = output.values()
+        task_instance.xcom_push(key='formalized', value=data)

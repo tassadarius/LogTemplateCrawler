@@ -9,7 +9,7 @@ def formalize(data: pd.DataFrame, possible_types: List[TokenType]):
     nan_rows = data[data.iloc[:, 0].isnull()]
     print(f'Contained {nan_rows} empty rows')
     data = data.drop(nan_rows.index)
-    data['arguments'] = data['arguments'].apply(literal_eval)
+    # data['arguments'] = data['arguments'].apply(literal_eval)
     data['preformat'] = data.iloc[:, 0].apply(_parse_string)
     data['formatter_count'] = data['preformat'].apply(_count_formatters)
     data['param_count'] = data.iloc[:, 1].apply(len)
@@ -17,8 +17,15 @@ def formalize(data: pd.DataFrame, possible_types: List[TokenType]):
     mask = data.apply(lambda row: row['param_count'] == row['formatter_count'], axis=1)
     data = data[mask]
 
-    output = data.apply(lambda x: _match_tokens(x['preformat'], x['arguments'], tokens=possible_types), axis=1)
-    return output.tolist()
+    #output = data.apply(lambda x: _match_tokens(x['preformat'], x['arguments'], tokens=possible_types), axis=1)
+    output = {}
+    for i, row in data.iterrows():
+        try:
+            tmp = _match_tokens(row['preformat'], params=row['arguments'], tokens=possible_types)
+            output[i] = tmp
+        except (TypeError, ValueError) as e:
+            pass
+    return output
 
 
 def _match_tokens(inp: List, params: List[str], tokens: List[TokenType]):

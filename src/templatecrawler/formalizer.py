@@ -45,9 +45,6 @@ def _match_tokens(inp: List, params: List[str], tokens: List[TokenType]):
     return ' '.join(inp)
 
 
-
-
-
 def _count_formatters(inp: List[str]) -> int:
     return inp.count('{}')
 

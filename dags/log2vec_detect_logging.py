@@ -14,6 +14,7 @@ default_args = {
 
 log = logging.getLogger(__name__)
 
+
 def _load_from_database(**context):
     params = context['params']
     postgres_conn_id = params['postgres_conn_id']
@@ -35,10 +36,10 @@ def _update_database(**context):
     if from_files is not None and without_files is not None:
         records_contains = list(from_files['contains_logging'].items())
         records_contains += list(without_files['contains_logging'].items())
-        records_framework = list(without_files['indicators'].items())
+        records_framework = list(from_files['framework'].items())
     elif from_files is not None:
         records_contains = list(from_files['contains_logging'].items())
-        records_framework = list(without_files['indicators'].items())
+        records_framework = list(from_files['framework'].items())
     elif without_files is not None:
         records_contains = list(without_files['contains_logging'].items())
     else:
@@ -51,9 +52,10 @@ def _update_database(**context):
     table_name = 'repositories'
     constraint_col = 'repo_id'
     target_col = 'contains_logging'
+    process_col = 'processed'
     conn = pg_hook.get_conn()
     cur = conn.cursor()
-    query = cur.mogrify(f"""UPDATE {table_name} SET {target_col} = data.{target_col} FROM
+    query = cur.mogrify(f"""UPDATE {table_name} SET {target_col} = data.{target_col}, {process_col} = TRUE FROM
 (VALUES %s) AS data({constraint_col}, {target_col}) WHERE {table_name}.{constraint_col} = data.{constraint_col}""")
     execute_values(cur=cur, sql=query, argslist=records_contains)
     conn.commit()
@@ -71,7 +73,7 @@ def _update_database(**context):
 
 dag = DAG('log2vec_detect-logging',
           description='Takes entries from the database, downloads some files and checks if they contain logging',
-          schedule_interval='0 12 * * *',
+          schedule_interval='*/10 * * * *',
           default_args={'db_conn_id': 'templates'},
           start_date=datetime(2020, 3, 20), catchup=False)
 

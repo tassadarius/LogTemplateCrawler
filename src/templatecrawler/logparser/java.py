@@ -39,7 +39,8 @@ class JavaParser:
     }
 
     def __init__(self, framework: str):
-        self.framework_map = self._framework_selector[framework]
+        self._framework_map = self._framework_selector[framework]
+        self._current_template = None
 
     def run(self, data):
         print(f'Dataset size before filtering is {len(data)}')
@@ -51,13 +52,15 @@ class JavaParser:
             # self.df = self.df[~mask]                                                      # Also in parent structure
             print(f'Removed {sum(mask)} entries from dataset. New size is {len(data)}')
 
-        output = {'template': [], 'arguments': []}
+        output = {'template': [], 'arguments': [], 'raw': []}
         for string in data:
+            self._current_template = string
             try:
                 result, arguments = self._parse_new(string)
-                output['template'].append(result)
-                output['arguments'].append(arguments)
-                output['raw'].append(string)
+                if result and len(result) > 0:
+                    output['template'].append(result)
+                    output['arguments'].append(arguments)
+                    output['raw'].append(string)
             except ValueError as e:
                 print(f'{string}\nParsing error: ', e)
         return pd.DataFrame(output)
@@ -261,7 +264,7 @@ class JavaParser:
 
             # Advance argument
             if token_type == 'punc' and token == ',':
-                param_offset += 1
+                param_offset = self._increase_index(param_offset, len(params))
                 param_type = params[param_offset]
 
             # New expression
@@ -333,8 +336,8 @@ class JavaParser:
 
         :return:
         """
-        if function_name in self.framework_map.keys():
-            return self.framework_map[function_name]
+        if function_name in self._framework_map.keys():
+            return self._framework_map[function_name]
         elif function_name in self._general_map.keys():
             return self._general_map[function_name]
         else:
@@ -390,3 +393,11 @@ class JavaParser:
             variable_name.append(token)
             lexer.next()
         raise ValueError('Unexpected EOF')
+
+    def _increase_index(self, old_value, list_size):
+        new_value = old_value + 1
+        if new_value >= list_size:
+            msg = f'Missparsing number of arguments on <{self._current_template}>'
+            logging.warning(msg)
+            raise ValueError(msg)
+        return new_value

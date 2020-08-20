@@ -126,7 +126,8 @@ class GitHubSearcher:
     def repositories(self, language: str, count=100, cursor: int = None):
         if cursor:
             target = f'cursor:{cursor}'
-            cursor = base64.b64encode(target)
+            cursor_as_bytes = base64.b64encode(bytes(target, encoding='utf-8'))
+            cursor = str(cursor_as_bytes, encoding='utf-8')
 
         data = self._caller.search_for_repos(language, count, cursor)
         self._df = pd.DataFrame([asdict(x) for x in data])

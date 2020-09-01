@@ -11,6 +11,7 @@ class LogParser:
     CSHARP = 'csharp'
 
     _engine_selector = {'java': JavaParser,
+                        'c': JavaParser,
                         'python': NotImplementedError,
                         'csharp': NotImplementedError}
 

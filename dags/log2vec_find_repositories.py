@@ -16,7 +16,7 @@ start_over = False
 find_task = SearchRepoOperator(task_id='find_repos_task', postgres_conn_id='templates',
                                start_over=start_over, dag=dag)
 process_and_save_task = FilterSearchOperator(task_id='process_and_save_repos_task', postgres_conn_id='templates',
-                                             language='java', dag=dag)
+                                             language='random', dag=dag)
 
 find_task >> process_and_save_task
 

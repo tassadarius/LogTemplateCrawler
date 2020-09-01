@@ -13,7 +13,7 @@ class JavaParser:
     log = logging.getLogger(__name__)
     _general_map = {
         'format': 'format',
-        'printf': 'printf'
+        'printf': 'format'
     }
     _slf4j_map = {
         'trace': 'format',
@@ -242,18 +242,30 @@ class JavaParser:
 
     def _parse_new(self, inp: str):
         character_stream = Stream(inp)
-        lexer = JavaTokenizer(character_stream)
 
+        lexer = JavaTokenizer(character_stream)
         mode, message, variables = self._read_variable(lexer)
         if mode == 'simple':
             return '', []
         elif mode == 'nested':
-            return message, variables
+            return message, self._flatten(variables)
         else:
             self.log.warning(f'General Parsing problem [Error on evaluating first expression] on <{inp}>')
 
-    def _parse_format(self, lexer: JavaTokenizer):
-        params = ['str', '...']
+    def _flatten(self, li):
+        output = []
+        for element in li:
+            if isinstance(element, list):
+                output += self._flatten(element)
+            else:
+                output.append(element)
+        return output
+
+    def _parse_format(self, lexer: JavaTokenizer, params: List[str]):
+
+        if not params:
+            raise ValueError("Trying to parse format without argument. Aborting...")
+
         param_offset = 0
         param_type = params[param_offset]
         message = ''
@@ -263,7 +275,7 @@ class JavaParser:
             token_type, token = lexer.peek()
 
             # Advance argument
-            if token_type == 'punc' and token == ',':
+            if token_type == 'punc' and token == ',' and param_type != '...':
                 param_offset = self._increase_index(param_offset, len(params))
                 param_type = params[param_offset]
 
@@ -281,10 +293,12 @@ class JavaParser:
             elif token_type == 'str' and param_type == '...':
                 variables.append(token)
             elif token_type == 'str':
-                message += token
+                message += self._parse_format_string(token)
 
             elif token_type == 'num' and param_type == 'str':
                 message += str(token)
+            elif token_type == 'num' and param_type == '...':
+                variables.append(token)
 
             # Variable
             elif token_type == 'var' or (token_type == 'op' and lexer.is_unary_ops(token)):
@@ -307,12 +321,15 @@ class JavaParser:
                     message += token
 
             lexer.next()
+        self._parse_format_string(message)
         return message, variables
 
     def _parse_simple(self, lexer: JavaTokenizer):
         return '', []
 
-    def _parse_printf(self, lexer: JavaTokenizer):
+    def _parse_printf(self, lexer: JavaTokenizer, params: List[str]):
+        if params != ['str', '...'] and params != ['str']:
+            raise ValueError(f"Got unexpected params <{params}> for '{lexer.input.s}'")
         return '', []
 
     def _get_format_expression(self, lexer: JavaTokenizer):
@@ -336,6 +353,7 @@ class JavaParser:
 
         :return:
         """
+        function_name = function_name.strip()
         if function_name in self._framework_map.keys():
             return self._framework_map[function_name]
         elif function_name in self._general_map.keys():
@@ -349,7 +367,7 @@ class JavaParser:
         'printf': _parse_printf
     }
 
-    def _read_variable(self, lexer):
+    def _read_variable(self, lexer: JavaTokenizer):
         stack = []
         variable_name = []
         previous_was_var = False
@@ -369,8 +387,13 @@ class JavaParser:
 
                 # If it is another formatting call, follow it
                 if mapping in self._processing_map.keys():
+                    _new_stream = Stream(lexer.input.s[lexer.input.pos - 1:])
+                    _new_lexer = JavaTokenizer(_new_stream)
+                    args = self._count_arguments(_new_lexer)
+                    param_mapping = self._create_params_mapping('unknown', args)
+                    # print(f'[NESTED] Argument count for {_new_lexer.input.s} --> {args}')
                     func = self._processing_map[mapping]
-                    msg, variables = func(self, lexer)
+                    msg, variables = func(self, lexer, param_mapping)
                     return 'nested', msg, variables
                 # Elsewise we handle as normal expression bracket
                 else:
@@ -401,3 +424,65 @@ class JavaParser:
             logging.warning(msg)
             raise ValueError(msg)
         return new_value
+
+    def _count_arguments(self, lexer: JavaTokenizer):
+        previous_token_type = None
+        previous_token = None
+        while not lexer.eof():
+            token_type, token = lexer.peek()
+            if token_type == 'punc' and token == '(':
+                previous_token_type = token_type
+                previous_token = token
+                lexer.next()
+                break
+            lexer.next()
+        if lexer.eof():
+            raise ValueError(f'Does not contain a function call')
+
+        stack = []
+        argument_count = 1
+        while not lexer.eof():
+            token_type, token = lexer.peek()
+
+            if token_type == 'punc' and token == ')' and not stack:
+                if previous_token_type and previous_token_type == 'punc' and previous_token and previous_token == '(':
+                    return 0
+                return argument_count
+            elif token_type == 'punc' and token == '(':
+                stack.append('(')
+            elif token_type == 'punc' and token == ')':
+                stack.pop()
+            elif token_type == 'punc' and token == ',' and not stack:
+                argument_count += 1
+            previous_token_type = token_type
+            previous_token = token
+            lexer.next()
+        return argument_count
+
+    def _create_params_mapping(self, name: str, argument_count: int):
+        mapping = {
+            0: [],
+            1: ['str'],
+            2: ['str', '...']
+        }
+        if argument_count in mapping.keys():
+            return mapping[argument_count]
+        else:
+            return mapping[2]
+
+    percentage_re = re.compile('%[0-9+#-.]*[l|hh|ll|j|z|tL]?[diuoxXfFeEgGaAcspn%]')
+
+    def _parse_format_string(self, fstring):
+        percentage_matches = re.findall(self.percentage_re, fstring)
+
+        if percentage_matches:
+            result = re.sub(self.percentage_re, '{}', fstring)
+            return result
+        return fstring
+
+
+    def _follow_percent(self, stream: Stream):
+        pass
+
+    def _follow_bracket(self, stream: Stream):
+        pass

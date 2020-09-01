@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 import base64
 import string
+import random
 from airflow.models import BaseOperator
 from airflow.utils.decorators import apply_defaults
 from airflow.hooks.postgres_hook import PostgresHook
@@ -50,11 +51,14 @@ class ConsumeDatabaseOperator(BaseOperator):
 class SearchRepoOperator(BaseOperator):
 
     @apply_defaults
-    def __init__(self,  postgres_conn_id: str, target_language: str = 'java', start_over: bool = False,
+    def __init__(self,  postgres_conn_id: str, target_language: str = 'random', start_over: bool = False,
                  *args, **kwargs):
         super(SearchRepoOperator, self).__init__(*args, **kwargs)
         self._conn_id = postgres_conn_id
-        self.target_language = target_language
+        if target_language == 'random':
+            self.target_language = random.choice(['Java', 'C'])
+        else:
+            self.target_language = target_language
         self.start_over = start_over
 
     def execute(self, context):
@@ -67,6 +71,9 @@ class SearchRepoOperator(BaseOperator):
             cursor = self._fetch_highest_cursor()
 
         result = searcher.repositories(self.target_language, count=100, cursor=cursor)
+        if len(result) == 0:
+            cursor = None
+            result = searcher.repositories(self.target_language, count=100, cursor=cursor)
         result['cursor'] = self._parse_cursor(result['cursor'])
         task_instance.xcom_push(key='raw_search', value=result)
 
@@ -100,6 +107,10 @@ class FilterSearchOperator(BaseOperator):
     def execute(self, context):
         task_instance = context['task_instance']                    # type: TaskInstance
         search_data = task_instance.xcom_pull(key='raw_search')     # type: pd.DataFrame
+
+        if search_data is None or len(search_data) == 0:
+            return
+
         accepted = search_data.loc[search_data['disk_usage'] >= 512000]   # Greater than 500 KiB
         rejected = search_data.loc[search_data['disk_usage'] < 512000]   # Smaller than 500 KiB
         pg_hook = PostgresHook(postgres_conn_id=self._conn_id)
@@ -116,7 +127,7 @@ class FilterSearchOperator(BaseOperator):
         df = df[columns]        # filter to the relevant columns
         data_as_list = df.to_records(index=False).tolist()
 
-        base_query = cur.mogrify(f"""INSERT INTO {table} ({','.join(columns)}) VALUES %s""")
+        base_query = cur.mogrify(f"""INSERT INTO {table} ({','.join(columns)}) VALUES %s ON CONFLICT DO NOTHING""")
         execute_values(cur, base_query, data_as_list, template=None, page_size=100)
         conn.commit()
         cur.close()
@@ -137,6 +148,12 @@ class FetchFilesOperator(BaseOperator):
             crawler = GitHubCrawler(auth_token=keyring.get_password('github-token', 'tassadarius'),
                                     owner=repo['owner'], repository=repo['name'])
             files = crawler.fetch_heuristically(30)
+            primary_language = crawler.fetch_primary_language()
+            tmp_language = primary_language
+            if 'java' in tmp_language or 'Java' in tmp_language:
+                repositories['languages'] = 'java'
+            if tmp_language == 'c':
+                repositories['languages'] = 'c'
             if files:
                 with_files[repo.repo_id] = files
             else:
@@ -161,7 +178,8 @@ class DetectLoggingFromFilesOperator(BaseOperator):
         contains_logging = []
         indicators = []
         for repo, git_objects in files.items():
-            detector = LogDetector(language='java')
+            language = repositories.loc[repo]['languages']
+            detector = LogDetector(language=str(language))
             tmp_files = [git.content for git in git_objects]
             tmp_bool, tmp_indicator = detector.from_files(tmp_files)
             if tmp_bool and tmp_indicator:
@@ -206,14 +224,34 @@ class CloneAndExtractOperator(BaseOperator):
         repositories = task_instance.xcom_pull(key='target_repositories')  # type: pd.DataFrame
         repositories.set_index('repo_id', inplace=True)
 
+        if len(repositories) == 0:
+            raise ValueError('Pulled data "target_repositories" is empty')
+
         extracted = {}
         for idx, repo in repositories.iterrows():
             crawler = GitHubCrawler(auth_token=None, owner=repo['owner'], repository=repo['name'])
-            crawler.fetch_repository('.')
+            try:
+                repo_destination = crawler.fetch_repository('.')
+            except ValueError as e:
+                logging.warning(e.args)
+                continue
+            language = repo['languages']
+            if type(language) == list:
+                if 'java' in language or 'Java' in language:
+                    language = 'java'
+                elif 'c' in language:
+                    language = 'c'
+                else:
+                    logging.info(f'Language was neither c nor java, only contained {language} ({repo["url"]})')
+                    continue
+
             if len(repo.framework) > 0:
-                extractor = LogExtractor(language='java', framework=repo.framework, repository=repo['name'])
+                extractor = LogExtractor(language=language, framework=repo.framework, repository=repo['name'])
                 raw_events = extractor.extract()
                 extracted[idx] = raw_events
+
+            crawler.delete(path=repo_destination)
+
         task_instance.xcom_push(key='raw_events', value=extracted)
         task_instance.xcom_push(key='target_repositories', value=repositories)
 
@@ -228,9 +266,19 @@ class ParseOperator(BaseOperator):
         task_instance = context['task_instance']  # type: TaskInstance
         repositories = task_instance.xcom_pull(key='target_repositories')  # type: pd.DataFrame
         data = task_instance.xcom_pull(key='raw_events')
+
         parsed = None
         for repo_id, extracted_lines in data.items():
-            parser = LogParser(language='java')
+            language = repositories.loc[repo_id]['languages']
+            if type(language) == list:
+                if 'java' in language or 'Java' in language:
+                    language = 'java'
+                elif 'c' in language:
+                    language = 'c'
+                else:
+                    logging.info(f'Language was neither c nor java, only contained {language} ({repositories.loc[repo_id]["url"]})')
+                    continue
+            parser = LogParser(language=language)
             result = parser.run(extracted_lines['raw'], framework=repositories.loc[repo_id]['framework'])
             result['repo_id'] = repo_id
             if len(result) == 0:

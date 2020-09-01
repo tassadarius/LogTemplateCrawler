@@ -1,7 +1,7 @@
 from typing import List, Union
 from random import sample
 from pathlib import Path
-from git import Repo
+from git import Repo, CommandError, GitCommandError, GitCommandNotFound
 from filelock import FileLock
 import pandas as pd
 from dataclasses import asdict
@@ -58,16 +58,23 @@ class GitHubCrawler:
     def fetch_repository(self, destination: Union[str, Path]):
         _destination = Path(destination, self.repository)
         if _destination.exists():
-            return
-            # shutil.rmtree(_destination)
-        Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(_destination), progress=GitHubCrawler._update)
+            return _destination
+        try:
+            Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(_destination), progress=GitHubCrawler._update)
+        except (CommandError, GitCommandError, GitCommandNotFound) as e:
+            raise ValueError(f'Git command {e.command} failed')
+        return str(_destination.absolute())
 
     def fetch_primary_language(self):
-        self._language = self._caller.get_primary_language()
-        self._extensions = LanguageMap[self._language.lower()]
+        self._language = self._caller.get_primary_language().lower()
+        self._extensions = LanguageMap[self._language]
+        return self._language
 
     def _fetch_root_tree(self) -> GitTree:
         return self._caller.get_root_tree()
+
+    def delete(self, path):
+        shutil.rmtree(path)
 
 
 class GitHubSearcherCSV:

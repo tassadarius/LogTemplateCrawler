@@ -17,6 +17,7 @@ class LogExtractor:
                                 'utillogger': utilloggerExtractor}
     _engine_selector = {'java': _java_framework_selector,
                         'python': NotImplementedError,
+                        'c': _java_framework_selector,
                         'csharp': NotImplementedError}
 
     def __init__(self, language: str, framework: str, repository: str):

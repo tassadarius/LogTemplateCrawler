@@ -30,3 +30,11 @@ class LogDetector:
     def from_dependencies(self, dependency_file: str):
         raise NotImplementedError
 
+    def framework(self, files: List[str]):
+        framework_indicators = [self._engine.detect_framework(x) for x in files]
+        framework_indicators = list(filter(None, framework_indicators))
+        if not framework_indicators:
+            return 'unknown'
+        else:
+            return max(framework_indicators, key=framework_indicators.count)
+

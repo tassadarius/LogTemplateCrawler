@@ -23,6 +23,7 @@ class GitHubCrawler:
         self._caller = GitHubCrawlerCalls(auth_token, owner, repository)
         self._language = None
         self._extensions = None
+        self._path = None
 
     def fetch_repository_tree(self, delay: int):
         pass
@@ -56,14 +57,15 @@ class GitHubCrawler:
             print(f'Downloading repository: {cur_count}/{max_count}\r', end="")
 
     def fetch_repository(self, destination: Union[str, Path]):
-        _destination = Path(destination, self.repository)
-        if _destination.exists():
-            return _destination
+        self._path = Path(destination, self.repository)
+        if self._path.exists():
+            return self._path
         try:
-            Repo.clone_from(f'https://github.com/{self.owner}/{self.repository}', str(_destination), progress=GitHubCrawler._update)
+            target_url = f'https://github.com/{self.owner}/{self.repository}'
+            Repo.clone_from(target_url, str(self._path), multi_options='--depth 1')  # , progress=GitHubCrawler._update)
         except (CommandError, GitCommandError, GitCommandNotFound) as e:
             raise ValueError(f'Git command {e.command} failed')
-        return str(_destination.absolute())
+        return str(self._path.absolute())
 
     def fetch_primary_language(self):
         self._language = self._caller.get_primary_language().lower()
@@ -73,8 +75,35 @@ class GitHubCrawler:
     def _fetch_root_tree(self) -> GitTree:
         return self._caller.get_root_tree()
 
-    def delete(self, path):
-        shutil.rmtree(path)
+    def fetch_files(self, path=None, language=None) -> List[str]:
+        _language = language or self._language
+        if not _language:
+            self.fetch_primary_language().lower()
+
+        _path = path or self._path
+        _path = Path(_path)
+        if not _path.exists():
+            self.fetch_repository(_path)
+
+        mapping = {
+            'java': 'java',
+            'c': 'c',
+            'csharp': 'cs',
+            'python': 'py'
+        }
+
+        files = []
+        for file in _path.rglob('*' + mapping[_language]):
+            if not file.is_file():
+                continue
+            with open(file, 'r') as file_descriptor:
+                data = file_descriptor.read()
+                files.append(data)
+        return files
+
+    def delete(self, path=None):
+        _path = path or self._path
+        shutil.rmtree(_path)
 
 
 class GitHubSearcherCSV:

@@ -14,7 +14,8 @@ class LogExtractor:
     _java_framework_selector = {'log4j': log4jExtractor,
                                 'slf4j': slf4jExtractor,
                                 'util': utilloggerExtractor,
-                                'utillogger': utilloggerExtractor}
+                                'utillogger': utilloggerExtractor,
+                                'unknown': log4jExtractor}
     _engine_selector = {'java': _java_framework_selector,
                         'python': NotImplementedError,
                         'c': _java_framework_selector,

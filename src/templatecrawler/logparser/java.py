@@ -52,13 +52,13 @@ class JavaParser:
             # self.df = self.df[~mask]                                                      # Also in parent structure
             print(f'Removed {sum(mask)} entries from dataset. New size is {len(data)}')
 
-        output = {'template': [], 'arguments': [], 'raw': []}
+        output = {'parsed_template': [], 'arguments': [], 'raw': []}
         for string in data:
             self._current_template = string
             try:
                 result, arguments = self._parse_new(string)
                 if result and len(result) > 0:
-                    output['template'].append(result)
+                    output['parsed_template'].append(result)
                     output['arguments'].append(arguments)
                     output['raw'].append(string)
             except ValueError as e:
@@ -319,6 +319,16 @@ class JavaParser:
                 token_type, token = lexer.peek()
                 if token_type == 'str':
                     message += token
+                elif token_type == 'var':
+                    tmp_mode, tmp_message, tmp_variables = self._read_variable(lexer)
+
+                    if tmp_mode == 'simple' and tmp_message:
+                        message += '{}'
+                        variables += tmp_message
+                    elif tmp_mode == 'nested':
+                        pass
+
+
 
             lexer.next()
         self._parse_format_string(message)

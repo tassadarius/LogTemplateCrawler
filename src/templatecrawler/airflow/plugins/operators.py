@@ -64,30 +64,27 @@ class SearchRepoOperator(BaseOperator):
     def execute(self, context):
         task_instance = context['task_instance']            # type: TaskInstance
         searcher = GitHubSearcher(auth_token=keyring.get_password('github-token', 'tassadarius'))
+        pg_hook = PostgresHook(postgres_conn_id=self._conn_id)
 
         if self.start_over:
             cursor = None
         else:
-            cursor = self._fetch_highest_cursor()
+            cursor = self._fetch_highest_cursor(pg_hook)
 
         result = searcher.repositories(self.target_language, count=100, cursor=cursor)
         if len(result) == 0:
             cursor = None
+            self._clear_cursor(pg_hook)
             result = searcher.repositories(self.target_language, count=100, cursor=cursor)
         result['cursor'] = self._parse_cursor(result['cursor'])
         task_instance.xcom_push(key='raw_search', value=result)
 
-    def _fetch_highest_cursor(self):
-        pg_hook = PostgresHook(postgres_conn_id=self._conn_id)
-        table_0 = 'repositories'
-        table_1 = 'discarded_repositories'
+    def _fetch_highest_cursor(self, pg_hook: PostgresHook):
+        latest_cursor, = pg_hook.get_first(f'SELECT cursor FROM cursor ORDER BY date DESC LIMIT 1', True) or (0,)
+        return None if latest_cursor == 0 else latest_cursor
 
-        # get_first() returns NoneType if the database is empty. 'or 0' is a precaution so max does not fail.
-        # If both are 0 we return NoneType indicating the database is empty
-        repo, = pg_hook.get_first(f'SELECT cursor FROM {table_0} ORDER BY cursor DESC LIMIT 1', True) or (0,)
-        disc_repo, = pg_hook.get_first(f'SELECT cursor FROM {table_1} ORDER BY cursor DESC LIMIT 1', True) or (0,)
-        max_value = max(repo, disc_repo)
-        return None if max_value == 0 else max_value
+    def _clear_cursor(self, pg_hook: PostgresHook):
+        pg_hook.run(f'DELETE FROM cursor', True)
 
     def _parse_cursor(self, cursor_series: pd.Series):
         cur_data = cursor_series.apply(base64.b64decode)
@@ -111,11 +108,13 @@ class FilterSearchOperator(BaseOperator):
         if search_data is None or len(search_data) == 0:
             return
 
+        cursor = search_data['cursor'].max()
         accepted = search_data.loc[search_data['disk_usage'] >= 512000]   # Greater than 500 KiB
         rejected = search_data.loc[search_data['disk_usage'] < 512000]   # Smaller than 500 KiB
         pg_hook = PostgresHook(postgres_conn_id=self._conn_id)
         self._write_to_database(accepted, pg_hook, table='repositories')
         self._write_to_database(rejected, pg_hook, table='discarded_repositories')
+        self._write_cursor(cursor, pg_hook)
 
     def _write_to_database(self, df: pd.DataFrame, pg_hook: PostgresHook, table: str) -> None:
         conn = pg_hook.get_conn()
@@ -131,6 +130,10 @@ class FilterSearchOperator(BaseOperator):
         execute_values(cur, base_query, data_as_list, template=None, page_size=100)
         conn.commit()
         cur.close()
+
+    def _write_cursor(self, cursor: int, pg_hook: PostgresHook):
+        _cursor = int(cursor)
+        pg_hook.run("""INSERT INTO cursor (cursor) VALUES (%s)""", autocommit=True, parameters=[_cursor])
 
 
 class FetchFilesOperator(BaseOperator):

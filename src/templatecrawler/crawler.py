@@ -7,6 +7,7 @@ import pandas as pd
 from dataclasses import asdict
 import base64
 import shutil
+import logging
 import psycopg2
 
 from templatecrawler.crawlerengine.calls import GitHubCrawlerCalls
@@ -16,6 +17,9 @@ from templatecrawler.crawlerengine.gittypes import GitTree, GitBlob
 
 
 class GitHubCrawler:
+
+    log = logging.getLogger(__name__)
+
     def __init__(self, auth_token: str, owner: str, repository: str,):
         self.auth_token = auth_token
         self.owner = owner
@@ -62,7 +66,7 @@ class GitHubCrawler:
             return self._path
         try:
             target_url = f'https://github.com/{self.owner}/{self.repository}'
-            Repo.clone_from(target_url, str(self._path), multi_options='--depth 1')  # , progress=GitHubCrawler._update)
+            Repo.clone_from(target_url, str(self._path), multi_options=['--depth 1'])  # , progress=GitHubCrawler._update)
         except (CommandError, GitCommandError, GitCommandNotFound) as e:
             raise ValueError(f'Git command {e.command} failed')
         return str(self._path.absolute())
@@ -93,12 +97,27 @@ class GitHubCrawler:
         }
 
         files = []
+        invalid_files = []
         for file in _path.rglob('*' + mapping[_language]):
             if not file.is_file():
                 continue
-            with open(file, 'r') as file_descriptor:
-                data = file_descriptor.read()
-                files.append(data)
+
+            encodings = ['utf-8', 'latin1', 'latin2', 'cp1251']
+            for i, encoding in enumerate(encodings):
+                with open(file, 'r', encoding=encoding) as file_descriptor:
+                    try:
+                        data = file_descriptor.read()
+                        files.append(data)
+                        break
+                    except (UnicodeDecodeError, OSError):
+                        pass
+
+                if i == len(encodings) - 1:
+                    invalid_files.append(file)
+
+        if invalid_files:
+            self.log.info(f'[FETCH FILES] {len(invalid_files)} could not be read due to UnicodeDecodeErrrors')
+
         return files
 
     def delete(self, path=None):
@@ -133,7 +152,7 @@ class GitHubSearcherCSV:
         self._lock.release()
         self._with_block = False
 
-    def repositories(self, language: str, count: int = 100):
+    def repositories(self, language: str, count: int = 1000):
         if not self._with_block:
             raise RuntimeError(f'{type(self).__name__} should only be used within a with statement')
         if self._old_df and not self._old_df.empty:
@@ -159,7 +178,7 @@ class GitHubSearcher:
         self._caller = GitHubCrawlerCalls(auth_token=auth_token)
         self._df = None
 
-    def repositories(self, language: str, count=100, cursor: int = None):
+    def repositories(self, language: str, count=1000, cursor: int = None):
         if cursor:
             target = f'cursor:{cursor}'
             cursor_as_bytes = base64.b64encode(bytes(target, encoding='utf-8'))

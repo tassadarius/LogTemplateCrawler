@@ -74,7 +74,7 @@ class JavaTokenizer:
             if escaped:
                 s += char
                 escaped = False
-            elif char == '\\':
+            elif char == r'\\':
                 escaped = True
             elif char == end:
                 break

@@ -2,6 +2,7 @@ from typing import List, Union
 import pandas as pd
 
 from templatecrawler.logparser.java import JavaParser
+from templatecrawler.logparser.c import CParser
 
 
 class LogParser:
@@ -11,7 +12,7 @@ class LogParser:
     CSHARP = 'csharp'
 
     _engine_selector = {'java': JavaParser,
-                        'c': JavaParser,
+                        'c': CParser,
                         'python': NotImplementedError,
                         'csharp': NotImplementedError}
 

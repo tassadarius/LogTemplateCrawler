@@ -10,39 +10,42 @@ from templatecrawler.logparser.javatokenizer import JavaTokenizer
 
 class JavaParser:
 
+    percentage_re = re.compile('%[0-9+#-.]*[l|hh|ll|j|z|tL]?[diuoxXfFeEgGaAcspn%]')
     log = logging.getLogger(__name__)
     _general_map = {
-        'format': 'format',
-        'printf': 'format'
+        'format': ('format', ['str', '...']),
+        'printf': ('format', ['str', '...']),
     }
     _slf4j_map = {
-        'trace': 'format',
-        'debug': 'format',
-        'info': 'format',
-        'warn': 'format',
-        'error': 'format'
+        'trace': ('format',  ['str', '...']),
+        'debug': ('format', ['str', '...']),
+        'info': ('format', ['str', '...']),
+        'warn': ('format', ['str', '...']),
+        'error': ('format', ['str', '...']),
     }
     _log4j_map = _slf4j_map
 
     _utillogger_map = {
-        'fine': 'simple',
-        'finer': 'simple',
-        'finest': 'simple',
-        'severe': 'simple',
-        'warning': 'simple',
+        'fine': ('simple', ['str']),
+        'finer': ('simple', ['str']),
+        'finest': ('simple', ['str']),
+        'severe': ('simple', ['str']),
+        'warning': ('simple', ['str']),
+        'log': ('format', ['skip', 'str', '...']),
     }
 
     _framework_selector = {
         'slf4j': _slf4j_map,
         'log4j': _log4j_map,
-        'utillogger': _utillogger_map
+        'utillogger': _utillogger_map,
+        'unknown': _slf4j_map
     }
 
     def __init__(self, framework: str):
         self._framework_map = self._framework_selector[framework]
         self._current_template = None
 
-    def run(self, data):
+    def run(self, data: pd.Series):
         print(f'Dataset size before filtering is {len(data)}')
 
         # Filter useless rows
@@ -61,8 +64,9 @@ class JavaParser:
                     output['parsed_template'].append(result)
                     output['arguments'].append(arguments)
                     output['raw'].append(string)
-            except ValueError as e:
-                print(f'{string}\nParsing error: ', e)
+            except (ValueError, IndexError) as e:
+                print(f'Parsing error on: "{string}"\n', e)
+
         return pd.DataFrame(output)
 
     def _parse(self, inp) -> Tuple[str, List[str]]:
@@ -248,7 +252,7 @@ class JavaParser:
         if mode == 'simple':
             return '', []
         elif mode == 'nested':
-            return message, self._flatten(variables)
+            return message.strip(), self._flatten(variables)
         else:
             self.log.warning(f'General Parsing problem [Error on evaluating first expression] on <{inp}>')
 
@@ -278,6 +282,10 @@ class JavaParser:
             if token_type == 'punc' and token == ',' and param_type != '...':
                 param_offset = self._increase_index(param_offset, len(params))
                 param_type = params[param_offset]
+
+            # If the argument shall be skipped, e.g. when it's the log level argument or so on.
+            elif param_type == 'skip':
+                pass
 
             # New expression
             elif token_type == 'punc' and token == '(':
@@ -328,19 +336,15 @@ class JavaParser:
                     elif tmp_mode == 'nested':
                         pass
 
-
-
             lexer.next()
         self._parse_format_string(message)
         return message, variables
 
-    def _parse_simple(self, lexer: JavaTokenizer):
-        return '', []
+    def _parse_simple(self, lexer: JavaTokenizer, params: List[str]):
+        raise NotImplementedError
 
     def _parse_printf(self, lexer: JavaTokenizer, params: List[str]):
-        if params != ['str', '...'] and params != ['str']:
-            raise ValueError(f"Got unexpected params <{params}> for '{lexer.input.s}'")
-        return '', []
+        raise NotImplementedError
 
     def _get_format_expression(self, lexer: JavaTokenizer):
         token_type, token = lexer.peek()
@@ -369,12 +373,12 @@ class JavaParser:
         elif function_name in self._general_map.keys():
             return self._general_map[function_name]
         else:
-            return None
+            return None, None
 
     _processing_map = {
         'format': _parse_format,
-        'simple': _parse_simple,
-        'printf': _parse_printf
+        'simple': _parse_format,
+        'printf': _parse_format
     }
 
     def _read_variable(self, lexer: JavaTokenizer):
@@ -393,16 +397,16 @@ class JavaParser:
             # Function Call
             elif token_type == 'punc' and token == '(' and previous_was_var:
                 previous_was_var = False
-                mapping = self._map_function(variable_name[-1])
+                func_type, default_args = self._map_function(variable_name[-1])
 
                 # If it is another formatting call, follow it
-                if mapping in self._processing_map.keys():
+                if func_type in self._processing_map.keys():
                     _new_stream = Stream(lexer.input.s[lexer.input.pos - 1:])
                     _new_lexer = JavaTokenizer(_new_stream)
                     args = self._count_arguments(_new_lexer)
-                    param_mapping = self._create_params_mapping('unknown', args)
-                    # print(f'[NESTED] Argument count for {_new_lexer.input.s} --> {args}')
-                    func = self._processing_map[mapping]
+                    param_mapping = self._create_params_mapping(default_args, args)
+
+                    func = self._processing_map[func_type]
                     msg, variables = func(self, lexer, param_mapping)
                     return 'nested', msg, variables
                 # Elsewise we handle as normal expression bracket
@@ -469,18 +473,22 @@ class JavaParser:
             lexer.next()
         return argument_count
 
-    def _create_params_mapping(self, name: str, argument_count: int):
-        mapping = {
-            0: [],
-            1: ['str'],
-            2: ['str', '...']
-        }
-        if argument_count in mapping.keys():
-            return mapping[argument_count]
-        else:
-            return mapping[2]
+    def _create_params_mapping(self, base_argument_template: str, argument_count: int):
+        if argument_count >= len(base_argument_template):
+            return base_argument_template
 
-    percentage_re = re.compile('%[0-9+#-.]*[l|hh|ll|j|z|tL]?[diuoxXfFeEgGaAcspn%]')
+        # If there are less arguments, we trim from back to front
+        arguments = base_argument_template[:argument_count]
+
+        # If there are only skips, we may not want those. Hope to hit them with just a str
+        if {'skip'} == set(arguments) and len(arguments) == 1:
+            return ['str']
+        # If there are 2 or more skips, we may just want to remove the last one
+        elif {'skip'} == set(arguments) and len(arguments) >= 1:
+            arguments.pop()
+            return arguments.append('str')
+
+        return arguments
 
     def _parse_format_string(self, fstring):
         percentage_matches = re.findall(self.percentage_re, fstring)
@@ -490,9 +498,3 @@ class JavaParser:
             return result
         return fstring
 
-
-    def _follow_percent(self, stream: Stream):
-        pass
-
-    def _follow_bracket(self, stream: Stream):
-        pass

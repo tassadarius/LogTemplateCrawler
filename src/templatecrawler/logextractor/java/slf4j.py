@@ -24,6 +24,7 @@ class slf4jExtractor(ExtractorBase):
             with open(_file, 'r') as fd:
                 strip_parents = _file.parts[_file.parts.index(last_dir) + 1:]
                 filename = '/'.join(strip_parents)
+                line_begin = -1
                 try:
                     data = fd.read()
                     search_result = [m.end() for m in re.finditer(self.log_statement_0, data)]

@@ -8,7 +8,7 @@ default_args = {
 
 dag = DAG('log2vec_find-repositories',
           description='Searches through the GitHub API for repositores and saves them to the database',
-          schedule_interval='*/10 * * * *',
+          schedule_interval='*/2 * * * *',
           default_args=default_args,
           start_date=datetime(2020, 3, 20), catchup=False)
 

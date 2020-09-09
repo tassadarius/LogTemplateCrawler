@@ -33,15 +33,15 @@ def is_list_empty(li: List):
 
 
 def _release_lock(pg_hook: PostgresHook, repo_id: str):
-    db_cursor = pg_hook.get_cursor()
     db_conn = pg_hook.get_conn()
+    db_cursor = db_conn.cursor()
     db_cursor.execute("""UPDATE repositories SET locked = FALSE WHERE repo_id = %s""", [repo_id])
     db_conn.commit()
 
 
 def _finish_hook(pg_hook: PostgresHook, success: bool, repo_id):
-    db_cursor = pg_hook.get_cursor()
     db_conn = pg_hook.get_conn()
+    db_cursor = db_conn.cursor()
     if success:
         db_cursor.execute("""UPDATE repositories SET processed = TRUE, successfully_processed = TRUE 
                           WHERE repo_id = %s""", [repo_id])
@@ -64,7 +64,8 @@ def _load_from_database(**context):
     repo_df = pg_hook.get_pandas_df(query, parameters=[False, False])
 
     if repo_df is None or len(repo_df) != 1:
-        raise ValueError("Could not load a valid repository from the database")
+        log.info("Could not load a valid repository from the database")
+        raise AirflowSkipException("Could not load a valid repository from the database")
 
     repo = repo_df.iloc[0, :]
     repo['repo_id'] = int(repo['repo_id'])
@@ -312,7 +313,7 @@ def _update_database(**context):
 dag = DAG('log2vec_process_repository',
           description='Processes a complete repository, by detecting logging, downloading repos, extracting source code'
                       'and parse them.',
-          schedule_interval='*/30 * * * *',
+          schedule_interval='*/10 * * * *',
           default_args={'db_conn_id': 'templates'},
           start_date=datetime(2020, 3, 20), catchup=False)
 

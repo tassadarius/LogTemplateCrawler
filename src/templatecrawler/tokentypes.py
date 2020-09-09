@@ -21,7 +21,10 @@ time_token = TokenType('TimePlaceholder', int, ['time', 'seconds', 'date', 'time
 date_token = TokenType('DatePlaceholder', str, ['time', 'timestamp', 'date', 'today', 'now'])
 id_token = TokenType('IDPlaceholder', str, ['id', 'identifier'])
 boolean_token = TokenType('BoolPlaceholder', bool, ['bool', 'boolean'])
-user_token = TokenType('UserPlaceholder', str, ['user', 'username', 'mail', 'email'])
+user_token = TokenType('UserPlaceholder', str, ['user', 'username', 'mail', 'email', 'name'])
 status_token = TokenType('StatusPlaceholder', str, ['state', 'status', 'condition'])
+string_token = TokenType('StringPlaceholder', str, ['name', 'input'])
+ip_token = TokenType('IPPlaceholder', str, ['ip, address'])
 
-tokens = [integer_token, float_token, path_token, url_token, time_token, date_token, id_token]
+tokens = [integer_token, float_token, path_token, url_token, time_token, date_token, id_token, user_token,
+          boolean_token, status_token, string_token, ip_token]

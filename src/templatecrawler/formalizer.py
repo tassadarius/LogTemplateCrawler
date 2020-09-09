@@ -1,6 +1,6 @@
 import pandas as pd
 from templatecrawler.tokentypes import TokenType
-from typing import List
+from typing import List, Tuple
 import random
 
 
@@ -12,7 +12,10 @@ def formalize(data: pd.DataFrame, possible_types: List[TokenType]):
     data['preformat'] = data.iloc[:, 0].apply(_parse_string)
     data['formatter_count'] = data['preformat'].apply(_count_formatters)
     data['param_count'] = data.iloc[:, 1].apply(len)
-    data = data[data['param_count'] > 0]
+
+    #  I used to filter those without params, but that's not good anymore
+    # data = data[data['param_count'] > 0]
+
     data = data.apply(_cut_longer, axis=1)
     mask = data.apply(lambda row: row['param_count'] == row['formatter_count'], axis=1)
     data = data[mask]
@@ -32,7 +35,6 @@ def _cut_longer(row: pd.Series):
     if 0 < difference < row['param_count']:
         row['arguments'] = row['arguments'][:-difference]
     return row
-
 
 
 def _match_tokens(inp: List, params: List[str], tokens: List[TokenType]):
@@ -56,7 +58,7 @@ def _match_tokens(inp: List, params: List[str], tokens: List[TokenType]):
             token = random.choice(possible_tokens[param])
             inp[offsets[i]] = f'{{{token.name}}}'
 
-    return ' '.join(inp)
+    return ''.join(inp)
 
 
 def _count_formatters(inp: List[str]) -> int:
@@ -72,18 +74,22 @@ def _parse_string(inp: str) -> List[str]:
             break
         c = inp[pos]
         if c == '{':
-            if inp[pos + 1] == '{':
-                current_tokens += inp[pos: pos + 1]
-                pos += 1
-                pass
-            elif (offset := _peek(inp[pos + 1:], '}')) > 0:
+            # if inp[pos + 1] == '{':
+            #     current_tokens += inp[pos: pos + 1]
+            #     pos += 1
+            #     pass
+            if _peek(inp[pos + 1:], '}') is True:
                 if len(current_tokens) > 0:
                     output.append(current_tokens)
                 output.append('{}')
-                pos += offset + 1   # +1 for normal movement
+                pos += 2   # + 1 for normal movement and +1 for the brackets
                 current_tokens = ""
             else:
-                raise ValueError('{ opened but never closed')
+                offset = _read_until(inp[pos + 1:], '}')
+                if offset > 0:
+                    current_tokens += '{{' + inp[pos + 1:pos + 1 + offset] + '}}'
+                    pos += offset + 2  # for the '{{' + '}}' + 1 by default
+
         else:
             current_tokens += c
             pos += 1
@@ -92,12 +98,19 @@ def _parse_string(inp: str) -> List[str]:
     return output
 
 
-def _peek(inp: str, end: str) -> int:
+def _peek(inp: str, end: str) -> bool:
+
+    # In case of End of String
+    if len(inp) == 0:
+        return False
+
+    # For the default (requested case that) the our placeholder = '{}'
+    if inp[0] == end:
+        return True
+
+
+def _read_until(inp: str, end: str) -> int:
     for i, c in enumerate(inp):
         if c == end:
-            return i + 1
-        elif c in {' ', '\n', '\t'}:
-            pass
-        else:
-            print(f'Unexpected token {c} between format brackets {{}}')
+            return i
     return -1

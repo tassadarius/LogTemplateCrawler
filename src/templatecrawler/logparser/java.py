@@ -10,7 +10,7 @@ from templatecrawler.logparser.javatokenizer import JavaTokenizer
 
 class JavaParser:
 
-    percentage_re = re.compile('%[0-9+#-.]*[l|hh|ll|j|z|tL]?[diuoxXfFeEgGaAcspn%]')
+    percentage_re = re.compile('%[0-9+#-.]*[l|hh|ll|j|z|tL]?[diuoxXfFeEgGaAcspnm]')
     log = logging.getLogger(__name__)
     _general_map = {
         'format': ('format', ['str', '...']),

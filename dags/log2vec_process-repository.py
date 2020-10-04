@@ -283,6 +283,39 @@ def _update_database(**context):
 
     df = data[columns]  # filter to the relevant columns
 
+    # Check for empty entries
+    mask = df['template'].apply(len) <= 0
+    mask |= df['parsed_template'].apply(len) <= 0
+
+    filter_count = mask.count(True)
+    if filter_count > 0:
+        log.info(f"Checked input data for empty entries in columns [template, parsed_template]"
+                 f"Discarding {filter_count} entries ({len(df)}-->{len(df) - filter_count})")
+        df = df.loc[[not x for x in mask]]
+
+    # First check if entries are in the discarded table:
+    to_check_entries = df[['template', 'parsed_template']].to_records(index=False).tolist()
+    conn = pg_hook.get_conn()
+    cur = conn.cursor()
+    mask = []
+    for pair in to_check_entries:
+        cur.execute(
+            "SELECT EXISTS (SELECT template_id FROM discarded_templates WHERE template = %s OR parsed_template = %s)",
+            pair
+        )
+        fetched_value, = cur.fetchone()  # Directly unpack the 1 element tuple.
+        mask.append(fetched_value)
+
+    if len(mask) != len(df):
+        raise ValueError(f'Checked whether entries are in discarded table returned {len(mask)} values.'
+                         f'But the data has {len(df)} entries, so that would be expected.')
+
+    filter_count = mask.count(True)
+    if filter_count > 0:
+        log.info(f"Checked existing, but discarded templates. "
+                 f"Discarding {filter_count} entries ({len(df)}-->{len(df) - filter_count})")
+        df = df.loc[[not x for x in mask]]
+
     # Here we have to split the query into ones with arguments and one without arguments
     emptiness_mask = df['arguments'].apply(is_list_empty)
     df_args = df.loc[~emptiness_mask]

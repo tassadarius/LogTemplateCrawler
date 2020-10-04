@@ -3,7 +3,7 @@
 --
 
 -- Dumped from database version 12.3
--- Dumped by pg_dump version 12.3
+-- Dumped by pg_dump version 12.4
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -41,7 +41,7 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.cursor (
     cursor integer,
-    date timestamp without time zone
+    date timestamp without time zone DEFAULT now()
 );
 
 
@@ -82,6 +82,25 @@ CREATE TABLE public.discarded_repositories (
 
 
 ALTER TABLE public.discarded_repositories OWNER TO tassadarius;
+
+--
+-- Name: discarded_templates; Type: TABLE; Schema: public; Owner: tassadarius
+--
+
+CREATE TABLE public.discarded_templates (
+    template_id integer,
+    repo_id integer,
+    template text,
+    crawl_date timestamp with time zone,
+    framework character varying(16),
+    raw text,
+    parsed_template text,
+    arguments text[],
+    disabled boolean
+);
+
+
+ALTER TABLE public.discarded_templates OWNER TO tassadarius;
 
 --
 -- Name: repositories; Type: TABLE; Schema: public; Owner: postgres
@@ -143,7 +162,8 @@ CREATE TABLE public.templates (
     framework character varying(16),
     raw text,
     parsed_template text,
-    arguments text[]
+    arguments text[],
+    disabled boolean
 );
 
 
@@ -202,6 +222,14 @@ ALTER TABLE ONLY public.discarded_repositories
 
 
 --
+-- Name: discarded_templates discarded_templates_parsed_template_key; Type: CONSTRAINT; Schema: public; Owner: tassadarius
+--
+
+ALTER TABLE ONLY public.discarded_templates
+    ADD CONSTRAINT discarded_templates_parsed_template_key UNIQUE (parsed_template);
+
+
+--
 -- Name: templates no_duplicates; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -223,6 +251,14 @@ ALTER TABLE ONLY public.repositories
 
 ALTER TABLE ONLY public.repositories
     ADD CONSTRAINT repositories_url_key UNIQUE (url);
+
+
+--
+-- Name: templates templates_parsed_template_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.templates
+    ADD CONSTRAINT templates_parsed_template_key UNIQUE (parsed_template);
 
 
 --
